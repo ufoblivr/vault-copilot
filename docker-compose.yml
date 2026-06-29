@@ -1,0 +1,58 @@
+# ============================================================================
+# Vault Copilot — Docker Compose
+# ============================================================================
+version: "3.8"
+
+services:
+  # FastAPI backend + AI models
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - vault-data:/app/chroma_db
+      - vault-db:/app/finance.db
+      - vault-logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - VAULT_LOG_JSON=true
+      - VAULT_CHROMA_PATH=/app/chroma_db
+      - VAULT_DB_PATH=/app/finance.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s    # Models take time to load
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G        # LLM + embeddings need significant RAM
+
+  # Streamlit UI
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: streamlit run src/ui/app.py --server.port 8501 --server.headless true
+    ports:
+      - "8501:8501"
+    environment:
+      - VAULT_API_URL=http://api:8000/api
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  vault-data:
+  vault-db:
+  vault-logs:
